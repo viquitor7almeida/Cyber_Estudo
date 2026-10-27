@@ -1,0 +1,51 @@
+### Relatório Técnico de Análise Forense e Investigação no Terminal
+
+**Objetivo:** Investigar a partição Windows via ambiente Linux para analisar arquivos executáveis suspeitos baixados recentemente, verificar a integridade do sistema e checar a presença de páginas/bloqueios de phishing.
+
+---
+
+**1. Montagem e Navegação no Sistema de Arquivos**
+
+* `sudo mkdir -p /mnt/windows`: Cria o diretório `/mnt/windows` no Linux para servir como ponto de montagem. O parâmetro `-p` garante a criação sem erros caso a pasta pai precise ser gerada.
+* `sudo mount -o ro /dev/sda2 /mnt/windows`: Monta a partição `/dev/sda2` (partição principal do Windows) no ponto `/mnt/windows`. O parâmetro `-o ro` fixa a montagem em **modo leitura** (read-only), impedindo alteração acidental de dados ou contaminação no disco examinado.
+* `cd mnt` / `cd windows` / `cd Users/Admin/Downloads`: Navegação pelos diretórios da partição Windows até chegar na pasta de downloads do usuário `Admin`.
+* `ls` / `ls -lt | head -n 30`: Lista os arquivos no diretório de downloads em ordem cronológica (mais recentes primeiro), exibindo os primeiros 30 resultados para identificar aquisições recentes.
+
+---
+
+**2. Verificação de Arquivos Suspeitos e Hashs**
+
+* `sha256sum "EPSON L395.rar"`: Gera a assinatura criptográfica SHA-256 do arquivo compactado de drivers para checagem de integridade ou validação contra bancos de ameaças.
+* `find /mnt/windows/Users/Admin/ -type f \( -name "*.exe" -o -name "*.zip" -o -name "*.rar" -o -name "*.7z" \) -mtime -90 2>/dev/null`: Executa uma busca varrendo todo o diretório do usuário `Admin` por arquivos executáveis ou compactados modificados nos últimos 90 dias, redirecionando erros para `/dev/null` para ocultar alertas de permissão negada.
+* `sha256sum /mnt/windows/Users/Admin/AppData/Local/Temp/PBDZegyJTa6Xe6w42.exe`: Gera o hash SHA-256 do arquivo executável temporário oculto encontrado na pasta `Temp`.
+* `sha256sum /mnt/windows/Users/Admin/AppData/Local/Temp/R8cRL3aJ69BN5swD4Z.exe`: Gera o hash SHA-256 do segundo arquivo com padrão de nome aleatório localizado em `Temp`.
+* `sha256sum /mnt/windows/Users/Admin/AppData/Roaming/TLauncher.exe`: Tentativa frustrada de checar o hash no diretório base de roaming (retornou arquivo inexistente).
+* `sha256sum /mnt/windows/Users/Admin/AppData/Roaming/.minecraft/TLauncher.exe`: Gera o hash SHA-256 do executável localizado no subdiretório correto do launcher.
+
+---
+
+**3. Inspeção do Conteúdo dos Executáveis Ocultos**
+
+* `file /mnt/windows/Users/Admin/AppData/Local/Temp/PBDZegyJTa6Xe6w42.exe`: Revela que o arquivo com extensão `.exe` é, na verdade, um documento HTML codificado em ASCII com linhas longas, e não um binário executável do Windows.
+* `file /mnt/windows/Users/Admin/AppData/Local/Temp/R8cRL3aJ69BN5swD4Z.exe`: Confirma a mesma anomalia para o segundo arquivo (trata-se de outro documento HTML).
+* `head -n 20 /mnt/windows/Users/Admin/AppData/Local/Temp/PBDZegyJTa6Xe6w42.exe`: Lê as primeiras 20 linhas do arquivo para entender seu conteúdo. A tag `<title>Suspected Phishing | Cloudflare</title>` revela que o download tentou baixar um arquivo mas recebeu como resposta uma página de bloqueio de phishing do Cloudflare.
+* `grep -iE 'href|src|script|http' /mnt/windows/Users/Admin/AppData/Local/Temp/PBDZegyJTa6Xe6w42.exe`: Busca por hiperlinks, scripts e URLs externas dentro do documento para identificar os endpoints com os quais a página tenta interagir (ex.: Turnstile da Cloudflare).
+* `grep -iE 'ray id|cf-ray|host|domain|url' /mnt/windows/Users/Admin/AppData/Local/Temp/PBDZegyJTa6Xe6w42.exe`: Extrai identificadores de requisição do Cloudflare. O parâmetro localizou o **Cloudflare Ray ID: a2e270ac98fcbdfb**.
+* `strings /mnt/windows/Users/Admin/AppData/Local/Temp/PBDZegyJTa6Xe6w42.exe | grep -i "Ray ID" -A 2 -B 2`: Filtra cadeias de caracteres legíveis imprimindo 2 linhas antes (`-B 2`) e 2 linhas depois (`-A 2`) do trecho "Ray ID" para inspecionar o bloco HTML do rodapé.
+
+---
+
+**4. Análise de Timestamps, Histórico e Logs de Eventos do Windows**
+
+* `ls -l --time-style=full-iso /mnt/windows/Users/Admin/AppData/Local/Temp/PBDZegyJTa6Xe6w42.exe`: Exibe a data e hora exatas da modificação do arquivo em formato ISO completo (`2026-08-20 12:30:36 -0300`), definindo a linha do tempo do evento.
+* `cat "/mnt/windows/Users/Admin/AppData/Roaming/Microsoft/Windows/PowerShell/PSReadLine/ConsoleHost_history.txt"`: Busca o histórico de comandos salvos do PowerShell no perfil examinando a presença de scripts maliciosos (retornou arquivo inexistente).
+* `ls -la --time-style=full-iso /mnt/windows/Users/Admin/AppData/Local/Temp | grep "2026-08-20 12:3"`: Mapeia outros arquivos salvos no diretório temporário no exato minuto em que a página do Cloudflare foi baixada.
+* `ls -la --time-style=full-iso /mnt/windows/Windows/System32/winevt/Logs/ | grep "2026-08-20"`: Filtra os logs de eventos binários do Windows (`.evtx`) atualizados na data da ocorrência, identificando alterações em logs como `Program-Compatibility-Assistant.evtx` e `WER-PayloadHealth.evtx`.
+
+---
+
+**5. Desmontagem e Limpeza do Ponto de Acesso**
+
+* `cd ~`: Sai do diretório montado e retorna para a home do usuário no Linux.
+* `sudo umount /mnt/windows`: Desmonta de forma segura o volume do Windows do sistema de arquivos do Linux.
+* `sudo rmdir /mnt/windows`: Remove o diretório temporário criado para a análise.

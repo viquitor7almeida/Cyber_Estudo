@@ -1,0 +1,34 @@
+***SSL e TLS***
+
+
+*Conceito fundamental: O SSL/TLS nascem com o objetivo de proteger com criptografia os dados e pacotes entre o TCP e o HTTP ficando entre o servidor e o cliente. Fundamentalmente resolvem 3 problemas, confidencialidade dos dados, integridade desses dados e a certeza de comunicação com um servidor seguro e real.
+
+
+*Dois principais tipos de criptografia base:
+
+-Criptografia Simétrica(chave única): Rápida e performática, normalmente usada pra tráfego real dos dados após handshake
+
+-Criptografia Assimétrica(Par de chaves pública e privada): Lenta e pesada. Usada geralmente pra fazer a autenticação
+
+
+*Handshake: O "aperto de mão", acontece entre cliente e servidor, geralmente no início da comunicação, acontece da seguinte forma:
+
+-Passo 1 - Client Hello: O cliente envia as versões de protocolos suportados, uma lista de cipher suites (combinações de algoritmos de criptografias que ele sabe usar, que no TLS 1.3 são pares de algoritmo AEAD + função de hash, ex: TLS_AES_128_GCM_SHA256), um número aleatório (client random) e caso o Diffle-Hellman vá ser utilizado, o cliente já envia o key share (parâmetros públicos do Diffle-Helman para adiantar a negociação).
+
+-Passo 2: Server Hello é a apresentação do certificado, onde o servidor apresenta como resposta a cipher suite escolhida, um número aleatório (server random), o certificado digital do servidor, que contém a chave pública do servidor e a assinatura da autoridade certificadora e caso esteja sendo utilizado Diffle-Hellman envia seu key share.
+
+-Passo 3: Utilização do certificado pelo cliente, onde é verificado a validade, é checado se bate correto com o domínio e a assinatura é decodificada, OBS: no TLS 1.3, o certificado já vem criptografado dentro da mensagem EncryptedExtensions.
+
+-Passo 4: É feita a troca de chaves, cliente e servidor negociam uma chave simétrica sem envia-la abertamente pela rede. Existem dois métodos para isso, o método clássico (RSA), consiste na criação de un valor aleatório chamado pré master secret, esse valor é criptografado usando a chave pública do servidor e é feito o envio para o servidor que possui a chave primária para fazer a descriptografia. Existe também o método moderno Diffle-Helman/ECDHE onde o cliente e o servidor trocam parâmetro matemáticos públicos e, através de um cálculo de curva elíptica, ambos chegam no mesmo resultado de valor secreto de forma independente e sem tráfego pela rede.
+
+-Passo 5: Derivação de chave por sessão, agora tanto o clinte quanto o servidor passam: client random, server random e pre master secret (ou o segredo derivado do diffle-hellman). Pós isso, ambos passam esses 3 valores em uma função matemática PRF (pseudo random function) para gerar chaves simétricas de sessão (session key).
+
+-Passo 6: Finalização, onde ambos enviam uma mensagem já criptografada confirmando que o handshake terminou e as chaves coincidem. A partir desse milisegundo, todo trafego que corre é cifrado simetricamente usando a session key
+
+OBS: o RSA não é mais um método válido no TLS 1.3, somente é utilizado no 1.2 pra trás.
+
+*Como os dados são cifrados após o handshake?:
+
+-Cifragem de payload: Os dados são cifrados com a session key usando o algoritmo AEAD (Authenticated Encryption with Associated Data, traduzindo:Criptografia Autenticada com Dados Associados) negociado no passo 1 e escolhido no passo 2. O payload é tratado como um fluxo de registros TLS, com limite de tamanho por registro
+
+-Geração de tag de autenticação: O próprio algoritmo AEAD gera, junto com o dado cifrado, uma tag de autenticação. Essa tago funciona como um selo de inviolabilidade, onde qualque bit alterado acarreta em uma falaha e o pacote é descartado, No AES-GCM a tag tem 16 bytes, no ChaCha20-Poly1305, 16 bytes também.

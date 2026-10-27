@@ -1,0 +1,5 @@
+***Protocolo HTTP-HTTPs***
+
+*HTTP* (Hypertext protocol): É o protocolo fundamental da web, que envia um hipertexto do servidor para o cliente
+
+* HTTPs (Hypertext protocol secure): É o protocolo de hiperrtexto com camadas de segurança aplicadas, com seu conteúdo criptografado. O HTTPs é a união do HTTP e o SSL/TLS, o SSL/TLS é uma camada para gerar essas criptografias
